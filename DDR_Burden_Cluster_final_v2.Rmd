@@ -1,0 +1,232 @@
+---
+title: "Comparison of Clusters"
+output: html_document
+date: "2023-03-15"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Libraries  
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(gridExtra)
+
+library(stringr)
+library(sf)
+library(tidyr)
+library(tidyverse)
+library(lubridate)
+library(devtools)
+library(janitor)
+```
+
+# to check for multicolinarity --> VIF test  
+
+```{r}
+library(car)
+```
+# kmeans package  
+```{r}
+library(stats)
+library(factoextra)
+```
+
+
+```{r}
+dd_burden.merge <- read.csv("/Users/adrianabryant/Desktop/For publication/DataFinal/dd_burden_pub.csv")
+
+dd_burden.merge$FIPS <- str_pad(dd_burden.merge$FIPS, 5, pad = "0")
+
+poverty <- read.csv("/Users/adrianabryant/Desktop/For publication/DataFinal/PovertyEstimates.csv")
+poverty$FIPS_code <- str_pad(poverty$FIPS_code, 5, pad = "0")
+
+NRIdata1 <- read.csv("/Users/adrianabryant/Desktop/For publication/DataFinal/NRI_Table_Counties/NRI_Table_Counties.csv")
+
+state.shp <- st_read("/Users/adrianabryant/Desktop/For publication/DataFinal/tl_2018_us_state/tl_2018_us_state.shp")
+county.shp <- st_read("/Users/adrianabryant/Desktop/For publication/DataFinal/tl_2018_us_county/tl_2018_us_county.shp")
+
+county.shp <- filter(county.shp,!STATEFP %in% c("02","15","72","78"))
+state.shp <- filter(state.shp,!STATEFP %in% c("02","15","60","66","69", "72","78"))
+
+county.shp <- rename(county.shp, FIPS = GEOID)
+state.shp <- rename(state.shp, FIPS = GEOID)
+
+
+
+fips <- read.csv("/Users/adrianabryant/Desktop/For publication/DataFinal/FIPS.csv")
+```
+
+```{r}
+NRIdata1 <- rename(NRIdata1,FIPS = STCOFIPS)
+NRIdata1 <- NRIdata1[,c('FIPS',"POPULATION")]
+```
+
+```{r}
+NRIdata1$FIPS <- str_pad(NRIdata1$FIPS, 5, pad = "0")
+dd_burden.merge<- merge(dd_burden.merge,NRIdata1,by="FIPS",all.x=TRUE)
+```
+
+# import disaster declarations  
+```{r}
+PDD <- read.csv("//Users/adrianabryant/Desktop/For publication/DataFinal/PDDAllison.csv")
+PDD.sub <- PDD[,c('disasterNumber..Maj..','disasterNumber..Em..',"FIPS","fyDeclared")]
+PDD.sub <- mutate_all(PDD.sub,~replace_na(.,0))
+PDD.sub$FIPS <- str_pad(PDD.sub$FIPS, 5, pad = "0")
+PDD.sub <- filter(PDD.sub, fyDeclared == c("2010","2011","2012","2013","2014","2015","2016","2017","2018","2019"))
+
+FREQ <- data.frame(table(PDD.sub$FIPS)) %>%
+  rename(FIPS = Var1)
+
+FREQ$FIPS <- as.character(FREQ$FIPS)
+fips$FIPS <- str_pad(fips$FIPS, 5, pad = "0")
+
+test <- merge(dd_burden.merge, FREQ, by="FIPS", all.x=TRUE)
+dd_burden.merge.freq <- test %>% replace(is.na(.), 0)
+
+```
+
+# merging burden with poverty data
+```{r}
+poverty.sub <- rename(poverty,FIPS=FIPS_code)
+m1 <- merge(dd_burden.merge,poverty.sub,by="FIPS",all.x=TRUE)
+m1$MEDHHINC_2020 <- as.numeric(gsub(',',"",m1$MEDHHINC_2020))
+```
+
+```{r}
+m1.pdd <- merge(dd_burden.merge.freq,poverty.sub,by="FIPS",all.x=TRUE)
+m1.pdd$MEDHHINC_2020 <- as.numeric(gsub(',',"",m1$MEDHHINC_2020))
+```
+
+```{r}
+model2 <- lm(ddratio.avg ~ burden.avg + MEDHHINC_2020,data = m1)
+
+vif(model2)
+
+barplot(vif(model2),main="VIF Values",horz=TRUE,col="steelblue")
+
+model3 <- lm(ddratio.avg ~ burden.avg + PCTPOVALL_2020 ,data = m1)
+
+vif(model3)
+
+barplot(vif(model3),main="VIF Values",horz=TRUE,col="steelblue")
+
+```
+
+#testing model with disaster frequency
+```{r}
+model4 <- lm(ddratio.avg ~ burden.avg + MEDHHINC_2020 + Freq,data=m1.pdd)
+vif(model4)
+
+barplot(vif(model4),main="VIF Values",horz=TRUE,col="steelblue")
+```
+
+k-means information
+https://towardsdatascience.com/how-to-use-and-visualize-k-means-clustering-in-r-19264374a53c
+
+radar plot information 
+https://www.datanovia.com/en/blog/beautiful-radar-chart-in-r-using-fmsb-and-ggplot-packages/
+
+```{r}
+#m2 <- m1[,c("ddratio.avg","burden.avg","POPULATION","PCTPOVALL_2020","MEDHHINC_2020")]
+m2 <- m1[,c("ddratio.avg","burden.avg","POPULATION")]
+#m2$MEDHHINC_2020 <- as.numeric(gsub(',',"",m2$MEDHHINC_2020))
+m2 <- data.frame(scale(m2))
+```
+
+# new test data frame with ratio, avg, pop, inc,freq
+```{r}
+m2.v2 <- m1.pdd[,c("ddratio.avg","burden.avg","POPULATION","Freq")]
+#m2.v2 <- m1.pdd[,c("ddratio.avg","burden.avg","POPULATION","MEDHHINC_2020","Freq")]
+#m2.v2 <- m1.pdd[,c("ddratio.avg","burden.avg","POPULATION")]
+
+m2.v2 <- data.frame(scale(m2.v2))
+```
+
+
+# kmeans with frequency value
+```{r}
+library(cluster)
+k1.v2 <- kmeans(m2.v2,3, iter.max = 10)
+
+p0.v2 <- fviz_cluster(k1.v2,data=m2.v2,geom="point")+ ggtitle("k = 4")
+p0.v2
+print(k1.v2)
+
+elbow1.v2 <- fviz_nbclust(m2.v2, kmeans, method = "wss")
+elbow1.v2
+```
+
+
+k mediods with revised data  
+this means inclusion of : "ddratio.avg","burden.avg","POPULATION","PCTPOVALL_2020","MEDHHINC_2020"
+
+```{r}
+k2.v2 <- pam(m2.v2,4,metric="euclidean",stand=FALSE)
+
+test$MedoidsClust <- k2.v2[["clustering"]]
+
+county.shp$FIPS <- str_pad(county.shp$FIPS, 5, pad = "0")
+test$FIPS <- str_pad(test$FIPS, 5, pad = "0")
+
+test$MedoidsClust <- factor(test$MedoidsClust)
+
+merge.v2 <- st_as_sf(merge(test,county.shp,by="FIPS",all.x=TRUE))
+#merge.v2 <- filter(merge.v2, !(Stabr %in% c("MP","VI","PR","AS","AK","0")))
+
+
+p <- ggplot()+
+  geom_sf(data=merge.v2,mapping=aes(fill=MedoidsClust),color="grey50")+
+  geom_sf(data=state.shp,fill=NA) +
+ ggtitle("Donor Donee and Burden Medoid (pop,freq), k=4")
+
+ggsave("/Users/adrianabryant/Desktop/For publication/DataFinal/Figure/DD_Burden_clust_pop_freq_k4_test.png", width = 6, height = 4)
+
+```
+
+```{r}
+#table(k2[["pamobject"]][["clustering"]])
+```
+
+```{r}
+library(hopkins)
+
+
+h <- hopkins(m2.v2)
+
+
+p <- hopkins.pval(h,3049)
+```
+
+hopkins stat 
+https://github.com/prathmachowksey/Hopkins-Statistic-Clustering-Tendency
+
+p value documentation 
+https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4111019/#:~:text=Being%20a%20probability%2C%20P%20can,other%20than%20due%20to%20chance
+
+```{r}
+difference <- compare_df_cols(m1,m2)
+```
+
+original data for each state 
+```{r}
+#df <- m1.pdd[,c("FIPS","ddratio.avg","burden.avg","POPULATION")]
+#df <- rename(df,ddratio.avg.og = ddratio.avg)
+#df <-rename(df,burden.avg.og = burden.avg)
+#df <- rename(df,POPULATION.og = POPULATION)
+#df1 <- merge(df,test,by="FIPS")
+
+#df1.freq <- df1 %>% replace(is.na(.), 0)
+#df1.freq$Cluster <- as.numeric(df1.freq$MedoidsClust)
+```
+
+# going to get some quick numbers of clusters with their original values. 
+
+```{r}
+#cluster_1 <- df1.freq %>% 
+#  data.frame(filter(df1.freq$Cluster == '1'))
+```
+

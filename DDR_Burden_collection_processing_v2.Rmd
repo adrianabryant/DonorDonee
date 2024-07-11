@@ -1,0 +1,529 @@
+---
+title: "10 Years"
+output: html_document
+date: "2023-03-14"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# load libraries. 
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(gridExtra)
+
+library(stringr)
+library(sf)
+library(tidyr)
+library(tidyverse)
+library(lubridate)
+library(devtools)
+```
+
+# import data. 
+
+```{r}
+IHP.full <- read.csv("/Users/adrianabryant/Desktop/For publication/DataFinal/IHP-groupedby-just-disaster-county-more-details-CPI-adjusted-fips.csv")
+
+PA.full <- read.csv("/Users/adrianabryant/Desktop/For publication/DataFinal/PA_FedObligated_ByCountyYear_CPI2019.csv")
+HMA.full <- read.csv("/Users/adrianabryant/Desktop/For publication/DataFinal/HMG_FedObligated_ByCountyYear_CPI2019.csv")
+
+state <- state.name
+
+state.shp <- st_read("/Users/adrianabryant/Desktop/For publication/DataFinal/tl_2018_us_state/tl_2018_us_state.shp")
+
+county.shp <- st_read("/Users/adrianabryant/Desktop/For publication/DataFinal/tl_2018_us_county/tl_2018_us_county.shp")
+
+fips <- read.csv("/Users/adrianabryant/Desktop/For publication/DataFinal/FIPS.csv")
+
+GDP <- read.csv("/Users/adrianabryant/Desktop/For publication/DataFinal/GDPAll.csv")
+
+GDP10 <- read.csv("/Users/adrianabryant/Desktop/For publication/DataFinal/GDP2010.csv")
+
+NRIdata1 <- read.csv("/Users/adrianabryant/Desktop/For publication/DataFinal/NRI_Table_Counties/NRI_Table_Counties.csv")
+
+poverty <- read.csv("/Users/adrianabryant/Desktop/For publication/DataFinal/PovertyEstimates.csv")
+```
+
+# loading in shape files. 
+
+```{r}
+#county.shp <- st_read("/Users/adrianabryant/OneDrive - University of Maryland/Research/Data/tl_2018_us_county")
+
+county.shp <- filter(county.shp,!STATEFP %in% c("02","15","72","78"))
+
+#state.shp <- st_read("/Users/adrianabryant/OneDrive - University of Maryland/Research/Data/tl_2018_us_state")
+
+state.shp <- filter(state.shp,!STATEFP %in% c("02","15","60","66","69", "72","78"))
+
+county.shp <- rename(county.shp, FIPS = GEOID)
+state.shp <- rename(state.shp, FIPS = GEOID)
+```
+
+```{r}
+poverty.sub <- poverty[,c("FIPS_code","Rural.urban_Continuum_Code_2013")]
+poverty.sub <- rename(poverty.sub,FIPS=FIPS_code)
+poverty.shp <- st_as_sf(merge(poverty.sub,county.shp,by="FIPS"))
+```
+
+```{r}
+NRIdata <- rename(NRIdata1, "FIPS"="STCOFIPS")
+NRIdata <- NRIdata[,c("FIPS","EAL_VALT","SOVI_SCORE")]
+NRIdata$FIPS <- str_pad(NRIdata$FIPS, 5, pad = "0")
+```
+
+# Format 2010 gdp data  
+
+```{r}
+GDP10 <- GDP10 %>% 
+  rename(FIPS = CAGDP9.Real.GDP.by.county.and.metropolitan.area.1.) %>%
+  rename(CountyName = X) %>%
+  rename(GDP10 = X.1)
+
+
+
+GDP10 <- GDP10[-(1:5),]
+GDP10 <- GDP10[-(3124:3136),]
+GDP10 <- GDP10[,-4]
+GDP10$GDP10 <- as.numeric(GDP10$GDP10)*1000 # due to this being in thousands of chained 2012 dollars 
+GDP10$FIPS <- str_pad(GDP10$FIPS, 5, pad = "0")
+GDP10 <- GDP10[,-2]
+```
+
+# format GDP. 
+in chained 2012 dollars. 
+
+```{r}
+GDPreal <- filter(GDP,LineCode==1)
+GDPreal$FIPS <- as.numeric(str_sub(GDPreal$GeoFIPS,2,-2))
+GDPreal$FIPS <- str_pad(GDPreal$FIPS, 5, pad = "0")
+
+GDPreal <- GDPreal[,c("FIPS","GDP11","GDP12","GDP13","GDP14","GDP15","GDP16","GDP17","GDP18","GDP19")]
+
+GDPreal$GDP11 <- as.numeric(GDPreal$GDP11)*1000
+GDPreal$GDP12 <- as.numeric(GDPreal$GDP12)*1000
+GDPreal$GDP13 <- as.numeric(GDPreal$GDP13)*1000
+GDPreal$GDP14 <- as.numeric(GDPreal$GDP14)*1000
+GDPreal$GDP15 <- as.numeric(GDPreal$GDP15)*1000
+GDPreal$GDP16 <- as.numeric(GDPreal$GDP16)*1000
+GDPreal$GDP17 <- as.numeric(GDPreal$GDP17)*1000
+GDPreal$GDP18 <- as.numeric(GDPreal$GDP18)*1000
+GDPreal$GDP19 <- as.numeric(GDPreal$GDP19)*1000
+
+GDPreal <- merge(GDPreal,GDP10,by="FIPS")
+
+```
+
+
+# tax data  
+(1)	A gross county file Excel file that excludes AGI classes—20incyall.xlsx
+
+```{r}
+tax10 <-read.csv("/Users/adrianabryant/Desktop/For publication/DataFinal/Taxcsv/10incyall.csv")
+tax11 <-read.csv("/Users/adrianabryant/Desktop/For publication/DataFinal/Taxcsv/11incyall.csv")
+tax12<-read.csv("/Users/adrianabryant/Desktop/For publication/DataFinal/Taxcsv/12incyall.csv")
+tax13<-read.csv("/Users/adrianabryant/Desktop/For publication/DataFinal/Taxcsv/13incyall.csv")
+tax14<-read.csv("/Users/adrianabryant/Desktop/For publication/DataFinal/Taxcsv/14incyall.csv")
+tax15<-read.csv("/Users/adrianabryant/Desktop/For publication/DataFinal/Taxcsv/15incyall.csv")
+tax16<-read.csv("/Users/adrianabryant/Desktop/For publication/DataFinal/Taxcsv/16incyall.csv")
+tax17<-read.csv("/Users/adrianabryant/Desktop/For publication/DataFinal/Taxcsv/17incyall.csv")
+tax18<-read.csv("/Users/adrianabryant/Desktop/For publication/DataFinal/Taxcsv/18incyall.csv")
+tax19<-read.csv("/Users/adrianabryant/Desktop/For publication/DataFinal/Taxcsv/19incyall.csv")
+```
+
+# Tax data for 'Income tax before credit'
+
+```{r}
+tax10.v1 <- tax10[,c("UNITED.STATES","X","X.1","X.2","X.64","X.65")]
+tax11.v1 <- tax11[,c("UNITED.STATES","X","X.1","X.2","X.64","X.65")]
+tax12.v1 <- tax12[,c("UNITED.STATES","X","X.1","X.2","X.67","X.68")]
+tax13.v1 <- tax13[,c("UNITED.STATES","X","X.1","X.2","X.71","X.72")]
+tax14.v1 <- tax14[,c("UNITED.STATES","X","X.1","X.2","X.74","X.75")]
+tax15.v1 <- tax15[,c("UNITED.STATES","X","X.1","X.2","X.78","X.79")]
+tax16.v1 <- tax16[,c("UNITED.STATES","X","X.1","X.2","X.94","X.95")]
+tax17.v1 <- tax17[,c("UNITED.STATES","X","X.1","X.2","X.96","X.97")]
+tax18.v1 <- tax18[,c("UNITED.STATES","X","X.1","X.2","X.96","X.97")]
+tax19.v1 <- tax19[,c("UNITED.STATES","X","X.1","X.2","X.97","X.98")]
+```
+
+# Formatting tax data  
+Renaming variables, concatenating fips, multiplying tax value by 1000. 
+
+```{r}
+tax10.v2 <- tax10.v1[-(1:5),-5] %>% 
+  rename(STFIP = UNITED.STATES) %>%
+  rename(COFIP = X.1) %>%
+  rename(STABB = X) %>%
+  rename(County = X.2) %>%
+  rename(Tax10 = X.65)
+tax10.v2$FIPS <- paste(tax10.v2$STFIP,tax10.v2$COFIP,sep="") 
+tax10.v2$Tax10 <- as.numeric(gsub(',',"",tax10.v2$Tax10))*1000
+tax10.v2 <- na.omit(tax10.v2[,-(1:4)])
+
+tax11.v2 <- tax11.v1[-(1:5),-5] %>% 
+  rename(STFIP = UNITED.STATES) %>%
+  rename(COFIP = X.1) %>%
+  rename(STABB = X) %>%
+  rename(County = X.2) %>%
+  rename(Tax11 = X.65)
+tax11.v2$FIPS <- paste(tax11.v2$STFIP,tax11.v2$COFIP,sep="") 
+tax11.v2$Tax11 <- as.numeric(gsub(',',"",tax11.v2$Tax11))*1000
+tax11.v2 <- na.omit(tax11.v2[,-(1:4)])
+
+tax12.v2 <- tax12.v1[-(1:5),-5] %>%
+  rename(STFIP = UNITED.STATES) %>%
+  rename(COFIP = X.1) %>%
+  rename(STABB = X) %>%
+  rename(County = X.2) %>%
+  rename(Tax12 = X.68)
+tax12.v2$FIPS <- paste(tax12.v2$STFIP,tax12.v2$COFIP,sep="") 
+tax12.v2$Tax12 <- as.numeric(gsub(',',"",tax12.v2$Tax12))*1000
+tax12.v2 <- na.omit(tax12.v2[,-(1:4)])
+
+tax13.v2 <- tax13.v1[-(1:5),-5] %>%
+  rename(STFIP = UNITED.STATES) %>%
+  rename(COFIP = X.1) %>%
+  rename(STABB = X) %>%
+  rename(County = X.2) %>%
+  rename(Tax13 = X.72)
+tax13.v2$FIPS <- paste(tax13.v2$STFIP,tax13.v2$COFIP,sep="") 
+tax13.v2$Tax13 <- as.numeric(gsub(',',"",tax13.v2$Tax13))*1000
+tax13.v2 <- na.omit(tax13.v2[,-(1:4)])
+
+tax14.v2 <- tax14.v1[-(1:5),-5] %>%
+  rename(STFIP = UNITED.STATES) %>%
+  rename(COFIP = X.1) %>%
+  rename(STABB = X) %>%
+  rename(County = X.2) %>%
+  rename(Tax14 = X.75)
+tax14.v2$FIPS <- paste(tax14.v2$STFIP,tax14.v2$COFIP,sep="") 
+tax14.v2$Tax14 <- as.numeric(gsub(',',"",tax14.v2$Tax14))*1000
+tax14.v2 <- na.omit(tax14.v2[,-(1:4)])
+
+tax15.v2 <- tax15.v1[-(1:5),-5] %>%
+  rename(STFIP = UNITED.STATES) %>%
+  rename(COFIP = X.1) %>%
+  rename(STABB = X) %>%
+  rename(County = X.2) %>%
+  rename(Tax15 = X.79)
+tax15.v2$FIPS <- paste(tax15.v2$STFIP,tax15.v2$COFIP,sep="") 
+tax15.v2$Tax15 <- as.numeric(gsub(',',"",tax15.v2$Tax15))*1000
+tax15.v2 <- na.omit(tax15.v2[-(3198:3216),-(1:4)])
+
+tax16.v2 <- tax16.v1[-(1:5),-5] %>%
+  rename(STFIP = UNITED.STATES) %>%
+  rename(COFIP = X.1) %>%
+  rename(STABB = X) %>%
+  rename(County = X.2) %>%
+  rename(Tax16 = X.95)
+tax16.v2$FIPS <- paste(tax16.v2$STFIP,tax16.v2$COFIP,sep="") 
+tax16.v2$Tax16 <- as.numeric(gsub(',',"",tax16.v2$Tax16))*1000
+tax16.v2 <- na.omit(tax16.v2[-(3198:3216),-(1:4)])
+
+tax17.v2 <- tax17.v1[-(1:5),-5] %>%
+  rename(STFIP = UNITED.STATES) %>%
+  rename(COFIP = X.1) %>%
+  rename(STABB = X) %>%
+  rename(County = X.2) %>%
+  rename(Tax17 = X.97)
+tax17.v2$FIPS <- paste(tax17.v2$STFIP,tax17.v2$COFIP,sep="") 
+tax17.v2$Tax17 <- as.numeric(gsub(',',"",tax17.v2$Tax17))*1000
+tax17.v2 <- na.omit(tax17.v2[-(3198:3217),-(1:4)])
+
+tax18.v2 <- tax18.v1[-(1:5),-5] %>%
+  rename(STFIP = UNITED.STATES) %>%
+  rename(COFIP = X.1) %>%
+  rename(STABB = X) %>%
+  rename(County = X.2) %>%
+  rename(Tax18 = X.97)
+tax18.v2$FIPS <- paste(tax18.v2$STFIP,tax18.v2$COFIP,sep="") 
+tax18.v2$Tax18 <- as.numeric(gsub(',',"",tax18.v2$Tax18))*1000
+tax18.v2 <- na.omit(tax18.v2[-(3198:3216),-(1:4)])
+
+tax19.v2 <- tax19.v1[-(1:5),-5] %>%
+  rename(STFIP = UNITED.STATES) %>%
+  rename(COFIP = X.1) %>%
+  rename(STABB = X) %>%
+  rename(County = X.2) %>%
+  rename(Tax19 = X.98)
+tax19.v2$FIPS <- paste(tax19.v2$STFIP,tax19.v2$COFIP,sep="") 
+tax19.v2$Tax19 <- as.numeric(gsub(',',"",tax19.v2$Tax19))*1000
+tax19.v2 <- na.omit(tax19.v2[-(3199:3223),-(1:4)])
+
+```
+
+
+# Format FIPS codes  
+
+```{r}
+fips$FIPS <- str_pad(fips$FIPS, 5, pad = "0")
+fips<- fips[,(3:4)]
+fips <- rename(fips,County=Area.Name..including.legal.statistical.area.description.)
+
+fips$new_county <- ifelse(str_detect(fips$County, "County"),
+                          str_sub(fips$County, 0,-8), 
+                          fips$County)
+```
+
+# Format IHP data for 2010-2019
+* 'Declaration Year' in original dataset is counted as 'Year' in new dataset
+* cleaned version is IHP.v3
+  + includes FIPS and IHP for 2010-2019
+  
+```{r}
+IHP.full$declarationDate <- ymd_hms(IHP.full$declarationDate)
+IHP.full$Year <- year(IHP.full$declarationDate)
+
+IHP.full <- filter(IHP.full, !(damagedStateAbbreviation %in% c("MP","VI","PR","AS","AK")))
+
+IHP.v1 <- IHP.full[,c("FIPS","Year","sum.ihpAmount.")]
+
+IHP.v1 <- rename(IHP.v1, IHP = sum.ihpAmount.)
+
+IHP.v2 <- reshape(IHP.v1, idvar = "FIPS", timevar = "Year", direction = "wide")
+
+IHP.v2 <- IHP.v2[,-c(2:9)]
+IHP.v2 <- IHP.v2[,-c(13)]
+
+IHP.v3 <- mutate_all(IHP.v2,~replace_na(.,0))
+```
+
+# Format PA data for 2010-2019. 
+* Need to find what "year" Allison's group data is counting from
+* cleaned version is PA.v2
+  + includes FIPS and PA for 2011-2020
+  + PA federal share obligated = 'PA'
+  + CPI 2019
+  
+```{r}
+PA.v1 <- rename(PA.full,PA = federalShareObligated_CPI2019)
+PA.v1 <- reshape(PA.v1, idvar = "FIPS", timevar = "year", direction = "wide")
+PA.v2 <- mutate_all(PA.v1,~replace_na(.,0))
+```
+
+# Format HMA data for 2011-2020. 
+* Need to find what "year" Allison's group data is counting from
+* cleaned version is HMA.v2
+  + includes FIPS and PA for 2011-2020
+  + HMA federal share obligated = 'HMA'
+  
+```{r}
+HMA.v1 <- rename(HMA.full,HMA = federalShareObligated_CPI2019)
+HMA.v1 <- reshape(HMA.v1, idvar = "FIPS", timevar = "year", direction = "wide")
+HMA.v2 <- mutate_all(HMA.v1,~replace_na(.,0))
+```
+
+# merge all tax data. 
+df_list <- list(df1, df2, df3)
+```{r}
+mergetax_list <- list(tax10.v2,tax11.v2,tax12.v2,tax13.v2,tax14.v2,tax15.v2,tax16.v2,tax17.v2,tax18.v2,tax19.v2)
+mergetax <- (Reduce(function(x, y) merge(x, y, all=TRUE), mergetax_list))
+
+mergetax$FIPS <- as.numeric(mergetax$FIPS)
+mergetax$FIPS <- str_pad(mergetax$FIPS, 5, pad = "0")
+
+```
+
+# merge tax with grant data  
+## data for 2010-2019
+```{r}
+mergegrant_list <- list(IHP.v3,PA.v2,HMA.v2)
+mergegrant <- (Reduce(function(x, y) merge(x, y, all=TRUE), mergegrant_list))
+mergegrant.0s <- mutate_all(mergegrant,~replace_na(.,0))
+
+mergegrant.0s$FIPS <- as.numeric(mergegrant.0s$FIPS)
+mergegrant.0s$FIPS <- str_pad(mergegrant.0s$FIPS, 5, pad = "0")
+
+mergegrant.0s$GrantTotal10<-mergegrant.0s$IHP.2010+mergegrant.0s$PA.2010+mergegrant.0s$IHP.2010
+
+mergegrant.0s$GrantTotal11<-mergegrant.0s$IHP.2011+mergegrant.0s$PA.2011+mergegrant.0s$IHP.2011
+
+mergegrant.0s$GrantTotal11<-mergegrant.0s$IHP.2011+mergegrant.0s$PA.2011+mergegrant.0s$IHP.2011
+
+mergegrant.0s$GrantTotal12<-mergegrant.0s$IHP.2012+mergegrant.0s$PA.2012+mergegrant.0s$IHP.2012
+
+mergegrant.0s$GrantTotal13<-mergegrant.0s$IHP.2013+mergegrant.0s$PA.2013+mergegrant.0s$IHP.2013
+
+mergegrant.0s$GrantTotal14<-mergegrant.0s$IHP.2014+mergegrant.0s$PA.2014+mergegrant.0s$IHP.2014
+
+mergegrant.0s$GrantTotal15<-mergegrant.0s$IHP.2015+mergegrant.0s$PA.2015+mergegrant.0s$IHP.2015
+
+mergegrant.0s$GrantTotal16<-mergegrant.0s$IHP.2016+mergegrant.0s$PA.2016+mergegrant.0s$IHP.2016
+
+mergegrant.0s$GrantTotal17<-mergegrant.0s$IHP.2017+mergegrant.0s$PA.2017+mergegrant.0s$IHP.2017
+
+mergegrant.0s$GrantTotal18<-mergegrant.0s$IHP.2018+mergegrant.0s$PA.2018+mergegrant.0s$IHP.2018
+
+mergegrant.0s$GrantTotal19<-mergegrant.0s$IHP.2019+mergegrant.0s$PA.2019+mergegrant.0s$IHP.2019
+
+
+mergegrantfinal <- mergegrant.0s[,c("FIPS","GrantTotal10","GrantTotal11","GrantTotal12","GrantTotal13","GrantTotal14","GrantTotal15","GrantTotal16","GrantTotal17","GrantTotal18","GrantTotal19")]
+```
+
+# merge all DD RATIO data  
+```{r}
+merge_ratio <- merge(mergegrantfinal,mergetax,all.y=TRUE,by="FIPS")
+```
+
+# merge burden data. 
+# went back on 4/20 and realized that I had miscalculated the burden average. I had equally weighted each year
+```{r}
+burdendata <- merge(NRIdata,GDPreal,by="FIPS")
+
+
+burdendata$burden10 <- (burdendata$EAL_VALT/burdendata$GDP10)
+burdendata$burden11 <- (burdendata$EAL_VALT/burdendata$GDP11)
+burdendata$burden12 <- (burdendata$EAL_VALT/burdendata$GDP12)
+burdendata$burden13 <- (burdendata$EAL_VALT/burdendata$GDP13)
+burdendata$burden14 <- (burdendata$EAL_VALT/burdendata$GDP14)
+burdendata$burden15 <- (burdendata$EAL_VALT/burdendata$GDP15)
+burdendata$burden16 <- (burdendata$EAL_VALT/burdendata$GDP16)
+burdendata$burden17 <- (burdendata$EAL_VALT/burdendata$GDP17)
+burdendata$burden18 <- (burdendata$EAL_VALT/burdendata$GDP18)
+burdendata$burden19 <- (burdendata$EAL_VALT/burdendata$GDP19)
+
+burdendata$avg <- mean(burdendata$GDP10+burdendata$GDP11+burdendata$GDP12+burdendata$GDP13+burdendata$GDP14+burdendata$GDP15+burdendata$GDP16+burdendata$GDP17+burdendata$GDP18+burdendata$GDP19)
+
+burdendata$avgburden<- burdendata$EAL_VALT/burdendata$avg
+
+#burdendata$burdenavg <- (burdendata$burden11+burdendata$burden12+burdendata$burden13+burdendata$burden14+burdendata$burden15+burdendata$burden16+burdendata$burden17+burdendata$burden18+burdendata$burden19+burdendata$burden10)/10
+
+burdenfinal <- burdendata[,c('FIPS',"SOVI_SCORE","avgburden")]
+burdenfinal$FIPS <- str_pad(burdenfinal$FIPS, 5, pad = "0")
+```
+
+# compute donor/donee ratio by (IHP+PA+HMA)/taxes per year. 
+
+```{r}
+merge_ratio$Grant1019 <- merge_ratio$GrantTotal10+merge_ratio$GrantTotal11+merge_ratio$GrantTotal12+merge_ratio$GrantTotal13+merge_ratio$GrantTotal14+merge_ratio$GrantTotal15+merge_ratio$GrantTotal16+merge_ratio$GrantTotal17+merge_ratio$GrantTotal18+merge_ratio$GrantTotal19
+
+merge_ratio$Tax1019 <- merge_ratio$Tax10+merge_ratio$Tax11+merge_ratio$Tax12+merge_ratio$Tax13+merge_ratio$Tax14+merge_ratio$Tax15+merge_ratio$Tax16+merge_ratio$Tax17+merge_ratio$Tax18+merge_ratio$Tax19
+
+```
+
+# creating data frame for only FIPS and ddratios per year. 
++ creating average ratio column  
+
+```{r}
+ddratio <- merge_ratio[,c("FIPS","Grant1019","Tax1019")]
+ddratio$FIPS <- str_pad(ddratio$FIPS, 5, pad = "0")
+
+ddratio$average <- ddratio$Grant1019/ddratio$Tax1019
+```
+
+# merging county level shape file to ddratio. 
+
+```{r}
+ddratioshape <- merge(ddratio,county.shp,by="FIPS")
+ddratioshape <- ddratioshape[,-(13:15)]
+ddratioshape1 <- na.omit(ddratioshape)
+
+```
+
+```{r}
+burdenfinal.shp <- merge(burdenfinal,county.shp,by="FIPS")
+burdenfinal.shp1 <- burdenfinal.shp[,-(12:14)]
+#burdenfinal.shp1 <- na.omit(burdenfinal.shp)
+```
+
+# burden quartiles. 
+
+```{r}
+qa2 <- quantile(burdenfinal.shp1$avgburden,c(0, 0.2, 0.4, 0.6, 0.8, 1.0,na.rm=TRUE))
+qa2
+
+a_ranks2 <- rank(burdenfinal.shp1$avgburden, ties.method = "first")
+
+burdenfinal.shp1$decile.burden_averaged <- cut(a_ranks2, quantile(a_ranks2, probs=0:10/10), include.lowest=TRUE, labels=FALSE)
+```
+
+# creating deciles. 
+
+qa1 <- quantile(sub$Burden,c(0, 0.2, 0.4, 0.6, 0.8, 1.0))
+qa1
+
+a_ranks1 <- rank(sub$Burden, ties.method = "first")
+
+sub$decile.burden <- cut(a_ranks1, quantile(a_ranks1, probs=0:10/10), include.lowest=TRUE, labels=FALSE) 
+
+```{r}
+qa1 <- quantile(ddratioshape1$average,c(0, 0.2, 0.4, 0.6, 0.8, 1.0,na.rm=TRUE))
+qa1
+
+a_ranks1 <- rank(ddratioshape1$average, ties.method = "first")
+
+ddratioshape1$decile.averaged <- cut(a_ranks1, quantile(a_ranks1, probs=0:10/10), include.lowest=TRUE, labels=FALSE)
+```
+
+# formatting as sf   
+
+```{r}
+ddratio.shp <- st_as_sf(ddratioshape1)
+burdenfinal.shp <- st_as_sf(burdenfinal.shp1)
+```
+
+# plotting 10 year average ratio. 
+
+```{r}
+p5 <- ggplot()+
+geom_sf(data=ddratio.shp,mapping=aes(fill=decile.averaged))+
+    geom_sf(data=state.shp,aes(color="red"),fill=NA) +
+  ggtitle("Decile Donor Donee Ratio Average (2010-2019)")+
+    scale_fill_continuous(high = "#132B43", low = "#56B1F7")
+#p5
+
+ggsave("/Users/adrianabryant/Desktop/For publication/Figure/DDR.png", width = 6, height = 4)
+```
+
+```{r}
+p6 <- ggplot()+
+geom_sf(data=burdenfinal.shp,mapping=aes(fill=decile.burden_averaged))+
+   geom_sf(data=state.shp,aes(color="red"),fill=NA) +
+   ggtitle("Decile Burden Average (2010-2019)") +
+    scale_fill_continuous(high = "#132B43", low = "#56B1F7")
+#p6
+
+ggsave("/Users/adrianabryant/Desktop/For publication/Figure/Burden.png", width = 6, height = 4)
+```
+
+```{r}
+#p7 <- ggplot()+
+#geom_sf(data=poverty.shp,mapping=aes(fill=Rural.urban_Continuum_Code_2013))+
+#   geom_sf(data=state.shp,aes(color="red"),fill=NA) +
+#   ggtitle("Urban/Rural Codes by US County")
+#p7
+```
+
+# overall dataset  
+
+```{r}
+burden.sub <- burdenfinal.shp1[,c("FIPS","NAME","SOVI_SCORE","avgburden","decile.burden_averaged")]
+burden.sub <- rename(burden.sub, burden.avg = avgburden)
+
+ratio.sub <- ddratioshape1[,c("FIPS","average","decile.averaged")]
+ratio.sub <- rename(ratio.sub, ddratio.avg = average)
+ratio.sub <- rename(ratio.sub, decile.ddratio_averaged = decile.averaged)
+
+dd_burden.merge <- merge(ratio.sub,burden.sub,by="FIPS")
+dd_burden.merge <- rename(dd_burden.merge, County = NAME)
+
+dd_burden.merge <- dd_burden.merge[,c("FIPS","County","ddratio.avg","burden.avg","decile.ddratio_averaged","decile.burden_averaged","SOVI_SCORE")]
+
+write.csv(dd_burden.merge,"/Users/adrianabryant/Desktop/For publication/DataFinal/dd_burden_pub.csv",row.names = FALSE)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
